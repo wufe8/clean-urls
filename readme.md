@@ -1,5 +1,7 @@
 # 链接追踪清理器
 
+A Chrome extension that automatically removes tracking parameters (such as spm, trackid) from web page links.
+
 一个轻量的 Chrome 扩展，自动移除网页链接中的常见追踪参数，保护您的隐私。支持多个平台, 默认对所有网站运行。 具体支持哪些不知道, 包括这个readme在内的所有内容全部都是聊天ai输出结合人工简单改编的。
 
 ## 功能
@@ -53,5 +55,5 @@ git clone https://github.com/wufe8/clean-urls.git
 ## 贡献
 我不知道啊 全是ai输出的 我就复制粘贴看着能用 你提issue我也看不懂js
 
-许可证
+## 许可证
 MIT
