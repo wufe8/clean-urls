@@ -1,0 +1,12 @@
+{
+  "manifest_version": 3,
+  "name": "链接追踪清理器",
+  "version": "1.0",
+  "description": "自动删除网页链接中的追踪参数（如 spm、trackid 等）",
+  "host_permissions": ["<all_urls>"],
+  "content_scripts": [{
+    "matches": ["<all_urls>"],
+    "js": ["content.js"],
+    "run_at": "document_start"
+  }]
+}
