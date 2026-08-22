@@ -2,19 +2,28 @@
 if (window.self === window.top) {
   console.log('链接追踪参数清理器 -- 已启动');
 
-  // ===== 配置区：在此添加你要删除的追踪参数 =====
-  const REMOVE_KEYS = [
-  'fbclid', 'ttclid', 'twclid', 'gclid', 'gad_source', 'msclkid',
-  'soc_src', 'soc_trk', 'yclid',
-  'spm_id_from', 'trackid', 'from_source', 'from', 'sec_uid',
-  'traffic_source', 'share_source', 'xhsshare',
-  '_hsenc', '_hsmi', 'hsa_cam', 'mc_cid', 'mc_eid', 'mkt_tok',
-  'utm_source', 'utm_medium', 'utm_campaign', 'utm_term', 'utm_content',
-  'ref', 'referrer', 'channel', 'source', 'medium'
-  ];
-  // =============================================
+  // ===== 通用追踪参数黑名单 =====
+  const GENERAL_REMOVE_KEYS = new Set([
+    // 通用广告与社交平台追踪
+    'fbclid', 'ttclid', 'twclid', 'gclid', 'gad_source', 'msclkid',
+    'soc_src', 'soc_trk', 'yclid',
+    'trackid', 'from_source', 'from', 'sec_uid',
+    'traffic_source', 'share_source', 'xhsshare',
+    '_hsenc', '_hsmi', 'hsa_cam', 'mc_cid', 'mc_eid', 'mkt_tok',
+    'utm_source', 'utm_medium', 'utm_campaign', 'utm_term', 'utm_content',
+    'ref', 'referrer', 'channel', 'source', 'medium',
+    // 阿里 / 淘宝 / 天猫 / B站等常见追踪参数
+    'spm', 'spm_id_from', 'scm', 'pvid', 'mi_id', 'upStreamPrice',
+    'sourceType', 'suid', 'share_crt_v', 'un', 'shareurl', 'short_name',
+    'app', 'bxsign', '_sub_ts'
+  ]);
 
-  // ---------- 清理函数（只删除指定参数）----------
+  // ===== 淘宝/天猫等电商白名单保留规则（对特定商品页更精准保留核心参数） =====
+  function isTaobaoOrTmall(hostname) {
+    return /(^|\.)(taobao\.com|tmall\.com|tmall\.hk|etao\.com)$/i.test(hostname);
+  }
+
+  // ---------- 清理函数 ----------
   function cleanUrl(href) {
     try {
       const url = new URL(href, document.baseURI);
@@ -22,12 +31,27 @@ if (window.self === window.top) {
 
       const params = new URLSearchParams(url.search);
       let changed = false;
-      REMOVE_KEYS.forEach(key => {
-        if (params.has(key)) {
-          params.delete(key);
-          changed = true;
+
+      // 针对淘宝/天猫商品详情页做针对性处理
+      if (isTaobaoOrTmall(url.hostname) && (url.pathname.includes('/item.htm') || url.pathname.includes('/detail.htm'))) {
+        // 商品页核心白名单参数：id（商品ID）、skuId（规格ID）、sku_properties（规格属性）等
+        const KEEP_KEYS = new Set(['id', 'skuId', 'sku_properties']);
+        const currentKeys = Array.from(params.keys());
+        for (const key of currentKeys) {
+          if (!KEEP_KEYS.has(key)) {
+            params.delete(key);
+            changed = true;
+          }
         }
-      });
+      } else {
+        // 通用黑名单过滤
+        for (const key of GENERAL_REMOVE_KEYS) {
+          if (params.has(key)) {
+            params.delete(key);
+            changed = true;
+          }
+        }
+      }
 
       if (!changed) return href;
       const newSearch = params.toString();
@@ -37,6 +61,23 @@ if (window.self === window.top) {
       return href;
     }
   }
+
+  // ---------- 清理当前页面地址栏 URL（无感 replaceState，不刷新页面） ----------
+  function cleanCurrentLocation() {
+    try {
+      const currentUrl = window.location.href;
+      const cleanedUrl = cleanUrl(currentUrl);
+      if (cleanedUrl && cleanedUrl !== currentUrl) {
+        window.history.replaceState(window.history.state, '', cleanedUrl);
+        console.debug('已净化当前地址栏 URL:', currentUrl, '→', cleanedUrl);
+      }
+    } catch (e) {
+      console.debug('净化当前地址栏失败:', e);
+    }
+  }
+
+  // 立即在 document_start 执行一次地址栏净化
+  cleanCurrentLocation();
 
   // ---------- 强制净化单个链接 ----------
   function cleanLink(link) {
@@ -51,6 +92,7 @@ if (window.self === window.top) {
 
   // ---------- 强制净化所有链接 ----------
   function cleanAllLinks() {
+    cleanCurrentLocation();
     document.querySelectorAll('a[href]').forEach(cleanLink);
   }
 
@@ -61,11 +103,9 @@ if (window.self === window.top) {
     cleanAllLinks();
   }
 
-  // ---------- 可选：一次延迟清理（防御早期重写，默认3秒）----------
+  // ---------- 延迟清理（防御页面脚本在加载完成后二次向 URL 或 DOM 追加参数）----------
+  setTimeout(cleanAllLinks, 1000);
   setTimeout(cleanAllLinks, 3000);
-
-  // ---------- 可选：每3秒扫描一次（防御多次重写, 默认关闭）----------
-  //setInterval(cleanAllLinks, 3000);
 
   // ---------- 监听动态添加的节点 ----------
   const childObserver = new MutationObserver((mutations) => {
@@ -90,13 +130,15 @@ if (window.self === window.top) {
 
   // ---------- 启动观察者 ----------
   function startObservers() {
-    childObserver.observe(document.body, { childList: true, subtree: true });
-    attrObserver.observe(document.body, {
-      subtree: true,
-      attributes: true,
-      attributeFilter: ['href']
-    });
-    console.log('链接追踪参数清理器 -- 监听启用中');
+    if (document.body) {
+      childObserver.observe(document.body, { childList: true, subtree: true });
+      attrObserver.observe(document.body, {
+        subtree: true,
+        attributes: true,
+        attributeFilter: ['href']
+      });
+      console.log('链接追踪参数清理器 -- 监听启用中');
+    }
   }
 
   if (document.body) {
@@ -105,30 +147,7 @@ if (window.self === window.top) {
     document.addEventListener('DOMContentLoaded', startObservers);
   }
 
-// ---------- 点击拦截（捕获阶段，仅处理普通左键，保留修饰键和中键的默认行为, 默认不启动）----------
-// document.addEventListener('click', function(e) {
-//   const link = e.target.closest('a[href]');
-//   if (!link) return;
-// 
-//   // 如果有修饰键（Ctrl/Shift/Meta）或者不是左键（中键等），不拦截，让浏览器默认处理
-//   if (e.ctrlKey || e.shiftKey || e.metaKey || e.button !== 0) {
-//     // 虽然不拦截，但链接的 href 已经被我们净化，默认行为会使用干净 URL
-//     return;
-//   }
-// 
-//   const rawHref = link.getAttribute('href');
-//   if (!rawHref) return;
-//   const cleanHref = cleanUrl(rawHref);
-//   if (cleanHref && cleanHref.startsWith('http')) {
-//     e.preventDefault();      // 阻止网站自己的路由逻辑
-//     e.stopPropagation();     // 可选
-//     console.log('点击跳转（已净化）:', cleanHref);
-//     window.location.href = cleanHref; // 当前页跳转
-//   }
-// }, true);
-
-  // ---------- 挂载全局（仅用于扩展内部，控制台无法访问，属于正常隔离）----------
-  // （此处的挂载并非必需，但保留以供扩展内部使用；控制台无法访问是Chrome的安全机制）
+  // ---------- 挂载全局 ----------
   try {
     window.cleanUrl = cleanUrl;
   } catch (e) {}
